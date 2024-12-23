@@ -1,0 +1,40 @@
+name: Check commit
+
+run-name: Check commit
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner selection
+        type: string
+        required: false
+        default: 'ubuntu-latest'
+      is-optional:
+        description: Check commit optional
+        type: string
+        required: false
+        default: 'false'
+
+jobs:
+  CheckCommit:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check commit name
+        continue-on-error: ${{ inputs.is-optional == 'optional' }}
+        shell: bash
+        run: |
+          COMMIT=$(git log -1 --no-merges --pretty=%B)
+          echo "Info: commit is - $COMMIT"
+          if ! echo $COMMIT | grep -qE '^ERP|PAYP|ONL|OFF|DEVOPS|CRM|DAT|K4B-[0-9]+ - .+$'; then
+            echo "Invalid: Commit message does not match the pattern"
+            echo "Info: Commit message should match the pattern <task_number> - <task_title>"
+            exit 1
+          else
+            echo "Valid: Commit name ($COMMIT) is correct"
+          fi

@@ -1,0 +1,135 @@
+name: Build and push image to ECR
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner selection
+        type: string
+        required: false
+        default: ubuntu-latest
+      dockerfile-path:
+        description: Dockerfile path
+        type: string
+        required: false
+        default: ./Dockerfile
+      aws-ecr-repository:
+        description: AWS ECR Repository
+        type: string
+        required: true
+      environment:
+        description: Environment name
+        type: string
+        required: true
+      aws-account-id:
+        description: AWS Account ID
+        type: string
+        required: true
+      aws-region:
+        description: AWS Region
+        type: string
+        required: true
+      tag-override:
+        description: Provide static tag instead of created on-fly
+        type: string
+        required: false
+        default: 'none'
+      ssm-parameters-env-files:
+        description: List of env files (<ssm parameter>@<env file name>)
+        type: string
+        required: false
+        default: 'none'
+      docker-extra-args:
+        description: Extra docker build args
+        type: string
+        required: false
+        default: ''
+    outputs:
+      aws-registry:
+        description: AWS Registry
+        value: ${{ jobs.BuildAndPushImage.outputs.aws-registry }}
+      docker-image-tag: 
+        description: Docker tag
+        value: ${{ jobs.BuildAndPushImage.outputs.docker-tag }}
+    secrets:
+      SSH_PRIVATE_KEY_SDK:
+        description: "SSH key for private dependency repository"
+        required: false
+
+jobs:
+  BuildAndPushImage:
+    runs-on: ${{ inputs.runs-on }}
+    outputs:
+      docker-tag: ${{ inputs.tag-override == 'none' && steps.generate-docker-image-tag.outputs.tag || inputs.tag-override }}
+      aws-registry: ${{ steps.login-ecr.outputs.registry }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Generate unique docker image tag for each run
+        id: generate-docker-image-tag
+        shell: bash
+        run: |
+          BC_CURRENT_DATE=$(date +'%Y%m%d')
+          BC_GITHUB_SHA=${{ github.sha }}
+          echo "tag=$(echo $BC_CURRENT_DATE.$GITHUB_RUN_ATTEMPT.$BC_GITHUB_SHA | cut -c1-18)" >> $GITHUB_OUTPUT
+
+      - name: Set up SSH key
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if [ "${{ secrets.SSH_PRIVATE_KEY_SDK }}" != "" ]; then
+            echo "${{ secrets.SSH_PRIVATE_KEY_SDK }}" > ~/.ssh/id_ed25519
+          else
+            ssh-keygen -t ed25519 -C "dummy@github-actions" -N "" -f ~/.ssh/id_ed25519
+          fi
+          chmod 600 ~/.ssh/id_ed25519
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          echo SSH_AUTH_SOCK=$SSH_AUTH_SOCK >> $GITHUB_ENV
+          echo SSH_FILE_PATH=~/.ssh/id_ed25519 >> $GITHUB_ENV
+      
+      - name: Configure AWS Credentials for ${{ inputs.environment }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ inputs.aws-account-id }}:role/github-actions-${{ inputs.environment }}-role
+          aws-region: ${{ inputs.aws-region }}
+      
+      - name: Login to Amazon ECR ${{ inputs.environment }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Prepare App's ENV
+        if: inputs.ssm-parameters-env-files != 'none'
+        shell: bash
+        run: |
+          for i in ${{ inputs.ssm-parameters-env-files }}; do
+            export PARAMETER=$(echo $i | awk -F '@' '{print $1}')
+            export ENV_FILE=$(echo $i | awk -F '@' '{print $2}')
+            aws ssm get-parameter --name $PARAMETER --with-decryption --output text --query Parameter.Value > $ENV_FILE
+            echo "GIT_HASH=$(git rev-parse --short HEAD)" >> $ENV_FILE
+          done
+
+      - name: Build, tag and push image to Amazon ECR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ inputs.dockerfile-path }}
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ inputs.aws-ecr-repository }}:${{ inputs.tag-override == 'none' && steps.generate-docker-image-tag.outputs.tag || inputs.tag-override }}
+          build-args: |
+            APP_ENV=${{ inputs.environment }} 
+            SOURCE_IMAGE=${{ steps.login-ecr.outputs.registry }}/docker:latest
+            DOCKER_REGISTRY=${{ steps.login-ecr.outputs.registry }}
+            ${{ inputs.docker-extra-args }}
+          no-cache: ${{ vars.BC_NO_CACHE || false }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          ssh: default=${{ env.SSH_AUTH_SOCK }}
+          secret-files: |
+            ssh_key_file=${{ env.SSH_FILE_PATH }}
