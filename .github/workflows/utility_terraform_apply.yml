@@ -1,0 +1,55 @@
+name: Build and push image to ECR
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner selection
+        type: string
+        required: false
+        default: ubuntu-latest
+      aws-account-id:
+        description: AWS Account ID
+        type: string
+        required: true
+      aws-region:
+        description: AWS Region
+        type: string
+        required: false
+        default: us-east-2
+      terraform-path:
+        description: Terraform path
+        type: string
+        required: true
+      terraform-config-file:
+        description: Terraform config file
+        type: string
+        required: false
+        default: terraform.config
+      terraform-tfvars-file:
+        description: Terraform tfvars file
+        type: string
+        required: false
+        default: terraform.tfvars
+
+jobs:
+  BuildAndPushImage:
+    runs-on: ${{ inputs.runs-on }}
+    outputs:
+      docker-tag: ${{ inputs.tag-override == 'none' && steps.generate-docker-image-tag.outputs.tag || inputs.tag-override }}
+      aws-registry: ${{ steps.login-ecr.outputs.registry }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials for ${{ inputs.environment }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ inputs.aws-account-id }}:role/github-actions-role
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: terraform apply
+        run: |
+          cd ${{ inputs.terraform-path }}
+          terraform init  -backend-config ${{ inputs.terraform-config-file }}   -reconfigure
+          terraform apply -var-file ${{ inputs.terraform-tfvars-file }}         -auto-approve 
