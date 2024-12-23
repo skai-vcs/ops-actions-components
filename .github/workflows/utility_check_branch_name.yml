@@ -1,0 +1,33 @@
+name: Check branch name 
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner selection
+        type: string
+        required: false
+        default: 'ubuntu-latest'
+      is-optional:
+        description: Check branch name optional
+        type: string
+        required: false
+        default: 'false'
+
+jobs:
+  CheckBranchName:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Check branch name
+        continue-on-error: ${{ inputs.is-optional == 'optional' }}
+        shell: bash
+        run: |
+          export BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "Info: Branch name is - $BRANCH_NAME"
+          if ! [[ "$BRANCH_NAME" =~ ^\s*((feature|bugfix|release|hotfix)\/(ERP|PAYP|ONL|OFF|DEVOPS|CRM|DAT|K4B)-[0-9]+(-[^[:space:]-]+)?|(release|hotfix)\/[0-9]+\.[0-9]+\.[0-9]+|(main|staging)|dependabot.*)\s*$ ]]; then
+            echo "Invalid: Branch name does not match the pattern"
+            echo "Info: Branch name should match the pattern <branch_type>/<task_number> OR <branch_type>/<task_number>-<text> OR <release_type>/<semantic_version>"
+            exit 1
+          else
+            echo "Valid: Branch name ($BRANCH_NAME) is correct"
+          fi

@@ -1,0 +1,35 @@
+name: Check PR name
+
+run-name: Check PR name
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner selection
+        type: string
+        required: false
+        default: 'ubuntu-latest'
+      is-optional:
+        description: Check PR name optional
+        type: string
+        required: false
+        default: 'false'
+
+jobs:
+  CheckPrName:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Check PR name
+        continue-on-error: ${{ inputs.is-optional == 'optional' }}
+        shell: bash
+        run: |
+          export PR_NAME="${{ github.event.pull_request.title }}"
+          echo "Info: PR name is - $PR_NAME"
+          if ! [[ "$PR_NAME" =~ ^(ERP|ONL|PAYP|OFF|DEVOPS|CRM|DAT|K4B-[0-9]+\ -\ .+)|(release\/[0-9]+\.[0-9]+\.[0-9]+)|(hotfix\/[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Failure: PR title does not match the pattern"
+            echo "Info: PR title should match the pattern <task_number> - <task_title>, release/<semantic_version>, or hotfix/<semantic_version>"
+            exit 1
+          else
+            echo "Valid: PR name ($PR_NAME) is correct"
+          fi

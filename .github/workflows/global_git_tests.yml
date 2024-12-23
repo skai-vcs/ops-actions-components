@@ -1,0 +1,45 @@
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner selection
+        type: string
+        required: false
+        default: ubuntu-latest
+      check-commit-enabled:
+        description: Check commit enabled or not
+        type: string
+        required: false
+        default: 'true'
+      check-pr-name-enabled:
+        description: Check PR name enabled or not
+        type: string
+        required: false
+        default: 'true'
+      check-branch-name-enabled:
+        description: Check branch (true/false/optional)
+        type: string
+        required: false
+        default: 'true'
+  
+jobs:
+  CheckCommit:
+    if: inputs.check-commit-enabled != 'false'
+    uses: skai-vcs/ops-actions-components/.github/workflows/utility_check_commit_message.yml@main
+    with:
+      is-optional: ${{ inputs.check-commit-enabled }}
+      runs-on: ${{ inputs.runs-on }}
+
+  CheckPRName:
+    if: inputs.check-pr-name-enabled != 'false'
+    uses: skai-vcs/ops-actions-components/.github/workflows/utility_check_pr_name.yml@main
+    with:
+      is-optional: ${{ inputs.check-pr-name-enabled }}
+      runs-on: ${{ inputs.runs-on }}
+
+  CheckBranchName:
+    if: inputs.check-branch-name-enabled != 'false'
+    uses: skai-vcs/ops-actions-components/.github/workflows/utility_check_branch_name.yml@main
+    with:
+      is-optional: ${{ inputs.check-branch-name-enabled }}
+      runs-on: ${{ inputs.runs-on }}

@@ -1,0 +1,30 @@
+name: Check version label
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner selection
+        type: string
+        required: false
+        default: ubuntu-latest
+      one_of:
+        type: string
+        required: false
+        default: 'major,minor,patch'
+    secrets:
+      gh-token:
+        description: "Github token"
+        required: true
+
+jobs:
+  CheckVersionLabel:
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Check version label
+        uses: docker://agilepathway/pull-request-label-checker:latest
+        with:
+          one_of: ${{ inputs.one_of }}
+          repo_token: ${{ secrets.gh-token }}
